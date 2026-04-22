@@ -1,7 +1,7 @@
 from django.shortcuts import render
 from django.http import HttpResponseRedirect
 # <HINT> Import any new Models here
-from .models import Course, Enrollment
+from .models import Course, Enrollment, Question, Choice, Submission
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404, render, redirect
 from django.urls import reverse
@@ -11,8 +11,52 @@ import logging
 # Get an instance of a logger
 logger = logging.getLogger(__name__)
 # Create your views here.
+def submit(request, course_id):
+    if request.method == 'POST':
+        user = request.user
+        course = get_object_or_404(Course, pk=course_id)
 
+        # Get enrollment
+        enrollment = get_object_or_404(Enrollment, user=user, course=course)
 
+        # Create submission
+        submission = Submission.objects.create(enrollment=enrollment)
+
+        # Get selected answers using helper
+        selected_ids = extract_answers(request)
+
+        # Add selected choices
+        choices = Choice.objects.filter(id__in=selected_ids)
+        submission.choices.set(choices)
+
+        # Redirect to result page
+        return redirect('onlinecourse:show_exam_result',
+                        course_id=course.id,
+                        submission_id=submission.id)
+def show_exam_result(request, course_id, submission_id):
+    course = get_object_or_404(Course, pk=course_id)
+    submission = get_object_or_404(Submission, pk=submission_id)
+
+    selected_choices = submission.choices.all()
+    selected_ids = [choice.id for choice in selected_choices]
+
+    total_score = 0
+    total_possible = 0
+
+    for question in course.question_set.all():
+        total_possible += question.grade
+
+        if question.is_get_score(selected_ids):
+            total_score += question.grade
+
+    context = {
+        'course': course,
+        'score': total_score,
+        'total': total_possible,
+        'grade': (total_score / total_possible) * 100 if total_possible > 0 else 0
+    }
+
+    return render(request, 'onlinecourse/exam_result_bootstrap.html', context)
 def registration_request(request):
     context = {}
     if request.method == 'GET':
